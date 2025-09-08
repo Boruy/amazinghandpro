@@ -1,0 +1,8 @@
+numpy==1.26.4
+os
+pybullet==3.2.7
+pybullet_data
+serial
+threading
+time
+tkinter

@@ -1,0 +1,290 @@
+<?xml version="1.0"?>
+<robot name="hand" xmlns:xacro="http://www.ros.org/wiki/xacro">
+	
+	<xacro:property name="white" value="1 1 1 1" />
+	<xacro:property name="mass" value="1" />
+	<xacro:property name="scale" value="0.1" />
+	<xacro:property name="reflect" value="-1"/> <!-- 1 for right hand, -1 for left hand -->
+	
+	<!-- Constants for robot dimensions -->
+	<!-- phalanges, from palm to tip: proximal - middle - distal -->
+	<xacro:property name="radius" value="${0.5 * scale}" />
+	<xacro:property name="len_proximal" value="${2.3 * scale}" />
+	<xacro:property name="len_middle" value="${2 * scale}" />
+	<xacro:property name="len_distal" value="${1.8 * scale}" />
+	<!-- fingers order: thumb - index - middle - ring - little -->
+	<xacro:property name="len_fingers" value="${[len_proximal*1, len_middle, len_distal*1.1],
+												[len_proximal*0.9, len_middle, len_distal],
+												[len_proximal, len_middle, len_distal],
+												[len_proximal*0.85, len_middle, len_distal]}" />
+	<xacro:property name="axle_offset" value="0.05" />
+	<xacro:property name="damping" value="0" />
+	<xacro:property name="friction" value="0" />
+	
+	<xacro:macro name="default_origin">
+		<origin xyz="0 0 0" rpy="0 0 0"/>
+	</xacro:macro>
+
+	<xacro:macro name="cube_default_contact">
+		<contact>
+			<lateral_friction value="1.0"/>
+			<rolling_friction value="0.0"/>
+			<contact_cfm value="0.0"/>
+			<contact_erp value="1.0"/>
+		</contact>
+	</xacro:macro>
+
+	<xacro:macro name="basic_default_inertia" params="mass">
+		<mass value="${mass}" />
+		<inertia ixx="1.0" ixy="0.0" ixz="0.0" iyy="1.0" iyz="0.0" izz="1.0" />
+	</xacro:macro>
+	<xacro:macro name="cube_default_inertia" params="mass side">
+		<xacro:property name="inertia" value="${mass*side*side/6}" />
+		<!-- I = m*l^2/6 -->
+		<mass value="${mass}" />
+		<inertia ixx="${inertia}" iyy="${inertia}" izz="${inertia}" />
+    </xacro:macro>
+	<xacro:macro name="sphere_default_inertia" params="mass radius">
+		<xacro:property name="inertia" value="${2*mass*radius*radius/5}" />
+		<!-- I = 2*m*r^2/5 -->
+		<mass value="${mass}" />
+		<inertia ixx="${inertia}" iyy="${inertia}" izz="${inertia}" />
+    </xacro:macro>
+	<xacro:macro name="cylinder_default_inertia" params="mass radius length">
+		<xacro:property name="inertia_x_y" value="${mass*(3*radius*radius+length*length)/12}" />
+		<xacro:property name="inertia_z" value="${mass*radius*radius/2}" />
+		<!-- Ix = Iy = m*(3*r^2 + h^2)/12 and Iz = m*r^2/2-->
+		<mass value="${mass}" />
+		<inertia ixx="${inertia_x_y}" iyy="${inertia_x_y}" izz="${inertia_z}" />
+    </xacro:macro>
+
+	<xacro:macro name="default_inertia" params="solid mass:=^ side:=^|'' radius:=^|'' length:=^|''">
+		<xacro:unless value="${solid == 'cube' or solid == 'sphere' or solid == 'cylinder'}">
+			<xacro:basic_default_inertia mass="${mass}"/>
+		</xacro:unless>
+		<xacro:if value="${solid == 'cube'}">
+			<xacro:cube_default_inertia mass="${mass}" side="${side}"/>
+		</xacro:if>
+		<xacro:if value="${solid == 'sphere'}">
+			<xacro:sphere_default_inertia mass="${mass}" radius="${radius}"/>
+		</xacro:if>
+		<xacro:if value="${solid == 'cylinder'}">
+			<xacro:cylinder_default_inertia mass="${mass}" radius="${radius}" length="${length}"/>
+		</xacro:if>
+	</xacro:macro>
+	
+	<xacro:macro name="solid" params="solid mass:=^ side:=^|'' radius:=^|'' length:=^|''">
+		<xacro:unless value="${solid == 'cube' or solid == 'sphere' or solid == 'cylinder'}">
+			<box side="1 1 1" />
+		</xacro:unless>
+		<xacro:if value="${solid == 'cube'}">
+			<box side="${side} ${side} ${side}" />
+		</xacro:if>
+		<xacro:if value="${solid == 'sphere'}">
+			<sphere radius="${radius}" />
+		</xacro:if>
+		<xacro:if value="${solid == 'cylinder'}">
+			<cylinder radius="${radius}" length="${length}" />
+		</xacro:if>
+	</xacro:macro>
+
+	<xacro:macro name="basic_link" params="name solid color:=${white} mass:=^
+									  side:=^|'' radius:=^|'' length:=^|''
+									  *origin inertia:=''">
+		<link name="${name}">
+			<visual>
+				<xacro:insert_block name="origin" />
+				<geometry>
+					<xacro:solid solid="${solid}" />
+				</geometry>
+				<material name="solid_color">
+					<color rgba="${color}"/>
+				</material>
+			</visual>
+			<collision>
+				<xacro:insert_block name="origin" />
+				<geometry>
+					<xacro:solid solid="${solid}" />
+				</geometry>
+			</collision>
+			<!-- <xacro:unless value="${inertia == 'off'}"> -->
+			<inertial>
+					<xacro:insert_block name="origin" />
+					<xacro:default_inertia solid="${solid}"/>
+			</inertial>
+			<!-- </xacro:unless> -->
+		</link>
+	</xacro:macro>
+
+	<xacro:macro name="basic_joint" params="name_parent name_child joint_type *origin *axis lower_limit:=${-pi/2} upper_limit:=${pi/2}">
+		<joint name="joint_${name_parent}_${name_child}" type="${joint_type}">
+			<parent link="${name_parent}" />
+			<child link="${name_child}" />
+			<xacro:insert_block name="origin"/>
+			<xacro:insert_block name="axis"/>
+			<dynamics damping="${damping}" friction="${friction}"/>
+			<limit effort="100.0" velocity="0.5" lower="${lower_limit}" upper="${upper_limit}"/>
+		</joint>
+	</xacro:macro>
+
+	
+	<xacro:macro name="segment" params="num_phalange name_finger:=^ change_uplimit:=${pi/2} change_orn1:=0 change_orn2:=0">
+		<xacro:if value="${name_finger == 'thumb'}">
+			<xacro:property name="num_finger" value="0"/>
+		</xacro:if>
+		<xacro:if value="${name_finger == 'index'}">
+			<xacro:property name="num_finger" value="1"/>
+		</xacro:if>
+		<xacro:if value="${name_finger == 'middle'}">
+			<xacro:property name="num_finger" value="2"/>
+		</xacro:if>
+		<xacro:if value="${name_finger == 'little'}">
+			<xacro:property name="num_finger" value="3"/>
+		</xacro:if>
+
+		<xacro:if value="${num_phalange == 1}">
+			<xacro:basic_joint name_parent="${name_finger}_knuckle${num_phalange}" name_child="${name_finger}_phalange${num_phalange}" joint_type="revolute" lower_limit="0" upper_limit="${change_uplimit}">
+				<origin xyz="0 0 ${radius}" rpy="${change_orn1}"/>
+				<axis xyz="0 1 0"/>
+			</xacro:basic_joint>
+		</xacro:if>
+		<xacro:unless value="${num_phalange == 1}">
+			<xacro:basic_joint name_parent="${name_finger}_knuckle${num_phalange}" name_child="${name_finger}_phalange${num_phalange}" joint_type="revolute" lower_limit="0" upper_limit="${change_uplimit}">
+				<origin xyz="0 0 0" rpy="${change_orn1}"/>
+				<axis xyz="0 1 0"/>
+			</xacro:basic_joint>
+		</xacro:unless>
+
+		<xacro:if value="${name_finger == 'thumb' and num_phalange == 1}">
+			<link name="thumb_phalange1">
+				<visual>
+					<origin xyz="0 0.2 ${len_fingers[num_finger][num_phalange-1]/2}" rpy="0 0 ${-pi/2}"/>
+					<geometry>
+						<mesh filename="package://mesh/thumb0.stl"
+							scale="${scale*100} ${scale*70} ${scale*140}" /> <!-- thumb0.stl -> 1mm ca -> 0.001m -->
+					</geometry>
+					<material name="solid_color">
+						<color rgba="${white}"/>
+					</material>
+				</visual>
+			</link>
+		</xacro:if>
+		<xacro:unless value="${name_finger == 'thumb' and num_phalange == 1}">
+			<xacro:basic_link name="${name_finger}_phalange${num_phalange}" solid="cylinder" length="${len_fingers[num_finger][num_phalange-1]}">
+				<origin xyz="0 0 ${len_fingers[num_finger][num_phalange-1]/2}" rpy="0 0 0"/>
+			</xacro:basic_link>
+		</xacro:unless>
+
+		<xacro:basic_joint name_parent="${name_finger}_phalange${num_phalange}" name_child="${name_finger}_knuckle${num_phalange+1}" joint_type="fixed">
+			<origin xyz="0 0 ${len_fingers[num_finger][num_phalange-1]}" rpy="${change_orn2}"/>
+			<axis xyz="0 1 0"/>
+		</xacro:basic_joint>
+		
+		<xacro:basic_link name="${name_finger}_knuckle${num_phalange+1}" solid="sphere" mass="0" inertia="off">
+			<origin xyz="0 0 0" rpy="0 0 0"/>
+		</xacro:basic_link>
+	</xacro:macro>
+
+
+	<xacro:macro name="finger" params="name_finger *origin *axis parent">
+		<xacro:if value="${name_finger == 'thumb'}">
+			<xacro:property name="ph1_orn" value="${-0.95097177} ${0.34844851} ${-0.53406558}"/> <!-- phi = 0 ; theta = -pi/5 ; psi = pi/3 -->
+			<xacro:property name="ph2_orn" value="0 0 ${reflect*0}"/>
+			<xacro:property name="lower_limit_lateral" value="0"/> <!-- 0 -->
+			<xacro:property name="upper_limit_lateral" value="${pi/6}"/>
+			<xacro:property name="upper_limit_frontal" value="${pi/3}"/>
+		</xacro:if>
+		<xacro:unless value="${name_finger == 'thumb'}">
+			<xacro:property name="ph1_orn" value="0 0 0"/>
+			<xacro:property name="ph2_orn" value="0 0 0"/>
+			<xacro:property name="lower_limit_lateral" value="${-pi/12}"/>
+			<xacro:property name="upper_limit_lateral" value="${pi/12}"/>
+			<xacro:property name="upper_limit_frontal" value="${pi/2}"/>
+		</xacro:unless>
+		<xacro:if value="${name_finger == 'little'}">
+			<xacro:property name="upper_limit_lateral" value="${pi/6}"/>
+		</xacro:if>
+
+		<xacro:basic_joint name_parent="${parent}" name_child="${name_finger}_knuckle1_pre" joint_type="fixed">
+			<xacro:insert_block name="origin"/>
+			<xacro:insert_block name="axis"/>
+		</xacro:basic_joint>
+
+		<xacro:basic_link name="${name_finger}_knuckle1_pre" solid="sphere" mass="0" inertia="off">
+			<origin xyz="0 0 ${radius}" rpy="0 0 0"/>
+		</xacro:basic_link>
+
+		<xacro:basic_joint name_parent="${name_finger}_knuckle1_pre" name_child="${name_finger}_knuckle1" joint_type="revolute" lower_limit="${lower_limit_lateral}" upper_limit="${upper_limit_lateral}">
+			<origin xyz="0 0 0" rpy="0 0 0"/>
+			<axis xyz="1 0 0"/>
+		</xacro:basic_joint>
+
+		<xacro:basic_link name="${name_finger}_knuckle1" solid="sphere" mass="0" inertia="off">
+			<origin xyz="0 0 ${radius}" rpy="0 0 0"/>
+		</xacro:basic_link>
+
+		<xacro:segment num_phalange="1">
+		</xacro:segment>
+		
+		<xacro:segment num_phalange="2" change_uplimit="${upper_limit_frontal}" change_orn1="${ph1_orn}" change_orn2="${ph2_orn}">
+		</xacro:segment>
+
+		<xacro:segment num_phalange="3">
+		</xacro:segment>
+	</xacro:macro>
+
+	<xacro:macro name="hand" params="*origin *axis">
+		<!-- PALM -->
+		<xacro:property name="height_palm" value="${8.2*scale}"/>
+		
+		<xacro:basic_joint name_parent="base" name_child="palm" joint_type="fixed">
+			<xacro:insert_block name="origin"/>
+			<xacro:insert_block name="axis"/>
+		</xacro:basic_joint>
+		
+		<link name="palm">
+			<visual>
+				<origin xyz="0 0.1 -0.3" rpy="${-pi/2} 0 ${pi/2}"/>
+				<geometry>
+					<mesh filename="package://mesh/palm.stl"
+					      scale="${scale*80} ${scale*90} ${scale*40}" /> <!-- palm.stl -> 1mm ca -->
+				</geometry>
+				<material name="solid_color">
+					<color rgba="${white}"/>
+				</material>
+			</visual>
+		</link>
+
+		<!-- THUMB -->
+		<xacro:finger name_finger="thumb" parent="palm">
+			<origin xyz="0 ${reflect*0.7/0.3*scale} 0" rpy="${-reflect*pi/2} 0 0"/>
+			<axis xyz="0 0 0"/>
+		</xacro:finger>
+
+		<!-- FINGERS -->
+		<xacro:finger name_finger="index" parent="palm">
+			<origin xyz="0 ${reflect*1/0.3*scale} ${height_palm/2 - 0.3/0.3*scale}" rpy="0 0 0"/>
+			<axis xyz="0 1 0"/>
+		</xacro:finger>
+
+		<xacro:finger name_finger="middle" parent="palm">
+			<origin xyz="0 ${-0.25/0.3*scale} ${height_palm/2}" rpy="0 0 0"/>
+			<axis xyz="0 1 0"/>
+		</xacro:finger>
+
+		<xacro:finger name_finger="little" parent="palm">
+			<origin xyz="0 ${-reflect*0.5/0.3*scale} ${height_palm/2 - 0.3/0.3*scale}" rpy="0 0 0"/>
+			<axis xyz="0 1 0"/>
+		</xacro:finger>
+	</xacro:macro>
+	
+	<xacro:basic_link name="base" solid="sphere" mass="0" radius="0">
+		<origin xyz="0 0 0" rpy="0 0 0"/>
+	</xacro:basic_link>
+	
+	<xacro:hand>
+		<origin xyz="0 0 0" rpy="0 0 0"/>
+		<axis xyz="1 0 0"/>
+	</xacro:hand>
+	
+</robot>
