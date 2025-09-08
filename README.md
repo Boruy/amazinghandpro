@@ -54,7 +54,7 @@
 - 依赖库安装：
   ```bash
   pip install -r requirements.txt
-````
+  ````
 
 主要依赖：
 
